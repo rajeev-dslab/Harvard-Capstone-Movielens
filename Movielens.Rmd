@@ -1,8 +1,10 @@
 ---
 title: "Harvard-capstone-Movielens-Report"
-author: "Rajeev"
+author: "Rajeev Kumar Rajesh"
 date: "02/08/2020"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -11,8 +13,8 @@ knitr::opts_chunk$set(echo = TRUE,fig.align = 'center', cache=FALSE, cache.lazy 
 ## Introduction
 This capstone project on ’Movie recommendation system'.The primary goal of recommendation systems is to help users find what they want based on their preferences and previous interactions, and predicting the rating for a new item. In this document, we create a movie recommendation system using the MovieLens dataset.
 
-
-```{r, include=FALSE, echo=FALSE}
+## Data Ingestion
+```{r}
 #############################################################
 # Create edx set, validation set, and submission file
 #############################################################
@@ -36,13 +38,13 @@ ratings <- fread(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings
 movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
 colnames(movies) <- c("movieId", "title", "genres")
 
-# if using R 4.0 or later
+
 movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
                                            title = as.character(title),
                                            genres = as.character(genres))
 
 movielens <- left_join(ratings, movies, by = "movieId")
-
+#Test and training set Data
 # Validation set will be 10% of MovieLens data
 set.seed(1, sample.kind="Rounding")
 test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
@@ -72,9 +74,9 @@ validation <- validation %>% select(-rating)
 
 The purpose for this project is creating a recommender system using MovieLens dataset. 
 
-The version of movielens dataset used for this final assignment contains approximately 10 Milions of movies ratings, divided in 9 Milions for training and one Milion for validation. It is a small subset of a much larger (and famous) dataset with several millions of ratings. Into the training dataset there are approximately **69878 users** and **10.677 different movies** divided in 20 genres such as Action, Adventure, Horror, Drama, Thriller and more.
+The version of movielens dataset used for this final assignment contains approximately 10 Milions of movies ratings, divided in 9 Milions for training and one Milion for validation. It is a small subset of a much larger (and famous) dataset with several millions of ratings. Into the training dataset there are approximately **69,878 users** and **10,677 different movies** divided in 20 genres such as Action, Adventure, Horror, Drama, Thriller and more.
 
-After a initial data exploration, the recommender systems builted on this dataset are evaluated and choosen based on the RMSE - Root Mean Squared Error that should be at least lower than **0.87750**.
+After a initial data exploration, the recommender systems builted on this dataset are evaluated and choosen based on the RMSE - Root Mean Squared Error that should be at least lower than **0.86490**.
 
 $$\mbox{RMSE} = \sqrt{\frac{1}{n}\sum_{t=1}^{n}e_t^2}$$
 
@@ -104,6 +106,13 @@ split_valid_CM <- validation_CM  %>% separate_rows(genres, sep = "\\|")
 
 ```
 ## Baseline Model: just the mean
+
+The formula used is:
+
+$$Y_{u,i} = \hat{\mu} + \varepsilon_{u,i}$$
+
+With $\hat{\mu}$ is the mean and $\varepsilon_{i,u}$ is the independent errors sampled from the same distribution centered at 0.
+
 ```{r}
 mu <- mean(edx$rating)  
 baseline_rmse <- RMSE(validation_CM$rating,mu)
@@ -114,7 +123,16 @@ rmse_results %>% knitr::kable()
 ```
 
 ## Movie Effect (b_i)
-Different movies are rated differently. As shown in the exploration, the histogram is not symmetric and is skewed towards negative rating effect. The movie effect can be taken into account by taking he difference from mean rating as shown in the following chunk of code.
+Different movies are rated differently. As shown in the exploration, the histogram is not symmetric and is skewed towards negative rating effect. The movie effect can be taken into account by taking the difference from mean rating as shown in the following chunk of code.
+
+The formula used is:
+
+$$Y_{u,i} = \hat{\mu} + b_i + \epsilon_{u,i}$$
+
+With $\hat{\mu}$ is the mean and $\varepsilon_{i,u}$ is the independent errors sampled from the same distribution centered at 0. The $b_i$ is a measure for the popularity of movie $i$, i.e. the bias of movie $i$.
+
+```{r, echo=FALSE, include=TRUE}
+
 ```{r}
 #different movie are rated diffrently 
 movie_avgs_norm <- edx %>% 
@@ -131,8 +149,14 @@ model_1_rmse <- RMSE(validation_CM$rating,predicted_ratings_movie_norm$pred)
 rmse_results <- bind_rows(rmse_results,data_frame(method="Movie Effect Model",  RMSE = model_1_rmse ))
 rmse_results %>% knitr::kable()
 ```
-## Movie and user effects(u_i)
+## Movie(b_i) and user effects(u_i)
 Different users are different in terms of how they rate movies. Some cranky users may rate a good movie lower or some very generous users just don’t care for assessment. . We can calculate it using this code.
+
+The formula used is:
+
+$$Y_{u,i} = \hat{\mu} + b_i + b_u + \epsilon_{u,i}$$
+
+With $\hat{\mu}$ is the mean and $\varepsilon_{i,u}$ is the independent errors sampled from the same distribution centered at 0. The $b_i$ is a measure for the popularity of movie $i$, i.e. the bias of movie $i$. The  $b_u$ is a measure for the mildness of user $u$, i.e. the bias of user $u$.
 
 ```{r}
 user_avgs_norm <- edx %>% 
@@ -154,6 +178,15 @@ rmse_results %>% knitr::kable()
 ```
 ## Regularization based approach
 We have noticed in our data exploration, some users are more actively participated in movie reviewing. There are also users who have rated very few movies (less than 30 movies). On the other hand, some movies are rated very few times (say 1 or 2). These are basically noisy estimates that we should not trust. Additionally, RMSE are sensitive to large errors. Large errors can increase our residual mean squared error. 
+
+
+The regularization method allows us to add a penalty $\lambda$ (lambda) to penalizes movies with large estimates from a small sample size. In order to optimize $b_i$, it necessary to use this equation:
+
+$$\frac{1}{N} \sum_{u,i} (y_{u,i} - \mu - b_{i})^{2} + \lambda \sum_{i} b_{i}^2$$   
+
+reduced to this equation:   
+
+$$\hat{b_{i}} (\lambda) = \frac{1}{\lambda + n_{i}} \sum_{u=1}^{n_{i}} (Y_{u,i} - \hat{\mu}) $$  
 
 ```{r}
 lambdas <- seq(0, 10, 0.25)
@@ -180,6 +213,9 @@ rmses <- sapply(lambdas, function(l){
   
   return(RMSE(validation_CM$rating,predicted_ratings))
 })
+
+# Plot rmses vs lambdas to select the optimal lambda
+qplot(lambdas, rmses)  
 
 lambda <- lambdas[which.min(rmses)]
 # Compute regularized estimates of b_i using lambda
